@@ -34,7 +34,10 @@ int16_t AccelX, AccelY, AccelZ, Temperature, GyroX, GyroY, GyroZ;
 
 int16_t gyroRate = 0;
 int16_t gyroCalli = 0;
-float gyroAngle = 0;
+float gyroAngle = 0.0;
+float accAngle = 0.0;
+
+float currentAngle = 0.0;
 
 //unsigned long currTime, prevTime=0, loopTime;
 
@@ -48,8 +51,7 @@ void setup() {
 
 void loop() {
   double Ax, Ay, Az, T, Gx, Gy, Gz;
-  float accAngle;
-
+  
   //GyroRate timer interval calculation
   //currTime = millis();
   //loopTime = currTime - prevTime;
@@ -65,7 +67,7 @@ void loop() {
   //Ay = (double)AccelY/AccelScaleFactor;
   //Az = (double)AccelZ/AccelScaleFactor;
   //T = (double)Temperature/340+36.53; //temperature formula
-  Gx = (double)GyroX/GyroScaleFactor;
+  //Gx = (double)GyroX/GyroScaleFactor;
   //Gy = (double)GyroY/GyroScaleFactor;
   //Gz = (double)GyroZ/GyroScaleFactor;
  
@@ -94,8 +96,9 @@ void loop() {
   Serial.print(" Gz: "); Serial.println(Gz);
    */
 
-  //Serial.println(accAngle);
- Serial.println(gyroAngle);
+ //Serial.println(accAngle);
+ //Serial.println(gyroAngle);
+ Serial.println(currentAngle);
   //delay(5);
 }
 
@@ -130,7 +133,7 @@ void Read_OneRawValue(uint8_t deviceAddress, uint8_t regAddress){
 }
 
 
-int calcAccAngle(double accY, double accZ) {
+float calcAccAngle(double accY, double accZ) {
   return atan2(accY, accZ)*RAD_TO_DEG;
 }
 
@@ -159,10 +162,35 @@ void Timer_Init(){
 
 //Interrupt Service Routine on timer event
 void onTimerISR(){
-  Read_OneRawValue(MPU6050SlaveAddress, MPU6050_REGISTER_GYRO_XOUT_H);
+  Read_RawValue(MPU6050SlaveAddress, MPU6050_REGISTER_ACCEL_XOUT_H);
+
+  /*
+   * Only Acceleration
+   */
+  //double Ay = (double)AccelY/AccelScaleFactor;
+  //double Az = (double)AccelZ/AccelScaleFactor;
+  //accAngle = calcAccAngle(Ay, Az);
+
+
+  /*
+   * Only Gyro
+   */
+  //Read_OneRawValue(MPU6050SlaveAddress, MPU6050_REGISTER_GYRO_XOUT_H);
   //gyroRate = map(GyroX, -32768, 32767, -250, 250); // brauchen wir glaub ich nicht. int16_t Range ( -32768, 32767 ) werte /131 (GyroScaleFactor) = -250 250
-  gyroRate = (GyroX - gyroCalli) / 131;
-  gyroAngle = gyroAngle + (float)gyroRate*0.005;
+  //gyroRate = (GyroX - gyroCalli) / GyroScaleFactor;
+  //gyroAngle = gyroAngle + (float)gyroRate*0.005;   //gyroAngle only
+  //currentAngle = gyroAngle;
+
+  /*
+   * Complementary
+   */
+  double Ay = (double)AccelY/AccelScaleFactor;
+  double Az = (double)AccelZ/AccelScaleFactor;
+  accAngle = calcAccAngle(Ay, Az);
+  gyroRate = (GyroX - gyroCalli) / GyroScaleFactor;
+  gyroAngle = (float)gyroRate*0.005;
+  currentAngle = 0.9934*(currentAngle + gyroAngle) + 0.0066*(accAngle); 
+  
 }
 
 void callibrateGyroValues(){
