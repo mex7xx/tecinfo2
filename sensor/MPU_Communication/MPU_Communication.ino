@@ -27,42 +27,47 @@ const uint8_t MPU6050_REGISTER_SIGNAL_PATH_RESET  = 0x68;
 
 
 //
-//const uint8_t MPU6050_REGISTER_GYRO_XOUT_H = 0x43;
+const uint8_t MPU6050_REGISTER_GYRO_XOUT_H = 0x43;
 //
 
 int16_t AccelX, AccelY, AccelZ, Temperature, GyroX, GyroY, GyroZ;
 
-int16_t gyroRate;
+int16_t gyroRate = 0;
+int16_t gyroCalli = 0;
 float gyroAngle = 0;
-unsigned long currTime, prevTime=0, loopTime;
+
+//unsigned long currTime, prevTime=0, loopTime;
 
 void setup() {
   Serial.begin(9600);
   Wire.begin(sda, scl);
   MPU6050_Init();
+  callibrateGyroValues();
+  Timer_Init();
 }
 
 void loop() {
   double Ax, Ay, Az, T, Gx, Gy, Gz;
   float accAngle;
 
-  //GyroRate
+  //GyroRate timer interval calculation
   //currTime = millis();
   //loopTime = currTime - prevTime;
   //prevTime = currTime;
   
   
-  Read_RawValue(MPU6050SlaveAddress, MPU6050_REGISTER_ACCEL_XOUT_H);
-  //Read_OneRawValue(MPU6050SlaveAddress, MPU6050_REGISTER_GYRO_XOUT_H);
+  //Read_RawValue(MPU6050SlaveAddress, MPU6050_REGISTER_ACCEL_XOUT_H);
+ 
+
   
   //divide each with their sensitivity scale factor
-  Ax = (double)AccelX/AccelScaleFactor;
-  Ay = (double)AccelY/AccelScaleFactor;
-  Az = (double)AccelZ/AccelScaleFactor;
-  T = (double)Temperature/340+36.53; //temperature formula
+  //Ax = (double)AccelX/AccelScaleFactor;
+  //Ay = (double)AccelY/AccelScaleFactor;
+  //Az = (double)AccelZ/AccelScaleFactor;
+  //T = (double)Temperature/340+36.53; //temperature formula
   Gx = (double)GyroX/GyroScaleFactor;
-  Gy = (double)GyroY/GyroScaleFactor;
-  Gz = (double)GyroZ/GyroScaleFactor;
+  //Gy = (double)GyroY/GyroScaleFactor;
+  //Gz = (double)GyroZ/GyroScaleFactor;
  
   //---
   //accAngle = calcAccAngle(Ay, Az);
@@ -72,25 +77,26 @@ void loop() {
   //gyroRate = map(GyroX, -32768, 32767, -250, 250); // brauchen wir glaub ich nicht. int16_t Range ( -32768, 32767 ) werte /131 (GyroScaleFactor) = -250 250
   //gyroAngle = gyroAngle + (float)gyroRate*loopTime/1000;
   //---
+
   
-  
+  /* 
+   *  Print RAW Values
+  */
+  /*
+  //Accerleration
   Serial.print("Ax: "); Serial.print(Ax);
   Serial.print(" Ay: "); Serial.print(Ay);
   Serial.print(" Az: "); Serial.println(Az);
  // Serial.print(" T: "); Serial.print(T);
- 
- // Serial.print(" Gx: "); Serial.print(Gx);
- // Serial.print(" Gy: "); Serial.print(Gy);
- // Serial.print(" Gz: "); Serial.println(Gz);
+  //Gyrosensor
+  Serial.print(" Gx: "); Serial.print(Gx);
+  Serial.print(" Gy: "); Serial.print(Gy);
+  Serial.print(" Gz: "); Serial.println(Gz);
+   */
 
   //Serial.println(accAngle);
-  
-  //Serial.print(" WinkelGyro: "); Serial.println(gyroAngle);
-  //Serial.print(" loopTime: "); Serial.println(loopTime);
-
-  //Serial.println(accAngle);
-  //Serial.println(gyroAngle);
-  delay(5);
+ Serial.println(gyroAngle);
+  //delay(5);
 }
 
 void I2C_Write(uint8_t deviceAddress, uint8_t regAddress, uint8_t data){
@@ -143,3 +149,31 @@ void MPU6050_Init(){
   I2C_Write(MPU6050SlaveAddress, MPU6050_REGISTER_SIGNAL_PATH_RESET, 0x00);
   I2C_Write(MPU6050SlaveAddress, MPU6050_REGISTER_USER_CTRL, 0x00);
 }
+
+//configure Interrupt
+void Timer_Init(){
+  timer1_attachInterrupt(onTimerISR);
+  timer1_enable(TIM_DIV16, TIM_EDGE, TIM_LOOP);
+  timer1_write(25000); //5ms
+}
+
+//Interrupt Service Routine on timer event
+void onTimerISR(){
+  Read_OneRawValue(MPU6050SlaveAddress, MPU6050_REGISTER_GYRO_XOUT_H);
+  //gyroRate = map(GyroX, -32768, 32767, -250, 250); // brauchen wir glaub ich nicht. int16_t Range ( -32768, 32767 ) werte /131 (GyroScaleFactor) = -250 250
+  gyroRate = (GyroX - gyroCalli) / 131;
+  gyroAngle = gyroAngle + (float)gyroRate*0.005;
+}
+
+void callibrateGyroValues(){
+  Serial.print("calli");
+  delay(150);
+  for (int i=0; i<100; i++) {
+    Read_OneRawValue(MPU6050SlaveAddress, MPU6050_REGISTER_GYRO_XOUT_H);
+    gyroCalli = gyroCalli + GyroX;
+  }
+  //Serial.print(gyroCalli);
+  gyroCalli = gyroCalli/100;
+  //Serial.printf("Cali: %d \n",gyroCalli);
+}
+
