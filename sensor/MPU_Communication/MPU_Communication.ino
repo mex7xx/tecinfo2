@@ -98,7 +98,7 @@ void loop() {
 
  //Serial.println(accAngle);
  //Serial.println(gyroAngle);
- Serial.println(currentAngle);
+  Serial.print("currentAngle: "); Serial.println(currentAngle);
   //delay(5);
 }
 
@@ -175,12 +175,15 @@ void onTimerISR(){
   /*
    * Only Gyro
    */
+  /*
   //Read_OneRawValue(MPU6050SlaveAddress, MPU6050_REGISTER_GYRO_XOUT_H);
   //gyroRate = map(GyroX, -32768, 32767, -250, 250); // brauchen wir glaub ich nicht. int16_t Range ( -32768, 32767 ) werte /131 (GyroScaleFactor) = -250 250
-  //gyroRate = (GyroX - gyroCalli) / GyroScaleFactor;
-  //gyroAngle = gyroAngle + (float)gyroRate*0.005;   //gyroAngle only
-  //currentAngle = gyroAngle;
+  gyroRate = (GyroX - gyroCalli) / GyroScaleFactor;
+  gyroAngle = gyroAngle + (float)gyroRate*0.005;   //gyroAngle only
+  currentAngle = gyroAngle;
+  */
 
+  
   /*
    * Complementary
    */
