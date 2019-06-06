@@ -2,10 +2,16 @@
 #include "math.h"
 
 // -------------------PINs Motor --------------
-#define MotorA D0
-#define MotorDirA D1 //HIGH = Forward ; LOW = Backward
+#define MotorA D1
+#define MotorDirA D3 //HIGH = Forward ; LOW = Backward
 #define MotorB D2
-#define MotorDirB D3
+#define MotorDirB D4
+#define EnableMotorAB D0
+#define StepPin D5    //StepWidth
+
+// Select SDA and SCL pins for I2C communication 
+#define scl D6
+#define sda D7
 
 #define Motor_Slack 45 //Compensate for the Dead zone in the PWM range
 #define Kp 40 //proportional constant
@@ -29,9 +35,7 @@ _lasttime += (t))
 
 
 
-// Select SDA and SCL pins for I2C communication 
-const uint8_t scl = D6;
-const uint8_t sda = D7;
+
 
 // MPU6050 Slave Device Address
 const uint8_t MPU6050SlaveAddress = 0x68;
@@ -329,5 +333,3 @@ void MPU6050_Init(){
   I2C_Write(MPU6050SlaveAddress, MPU6050_REGISTER_SIGNAL_PATH_RESET, 0x00);
   I2C_Write(MPU6050SlaveAddress, MPU6050_REGISTER_USER_CTRL, 0x00);
 }
-
-
