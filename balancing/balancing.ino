@@ -13,7 +13,7 @@
 #define scl D6
 #define sda D7
 
-#define Motor_Slack 45 //Compensate for the Dead zone in the PWM range
+//#define Motor_Slack 45 //Compensate for the Dead zone in the PWM range
 #define Kp 40 //proportional constant
 #define Kd -2 //Derivative constant
 #define Ki 10 //Integral constant
@@ -224,6 +224,12 @@ void setup() {
   pinMode(MotorDirA, OUTPUT);
   pinMode(MotorB, OUTPUT);
   pinMode(MotorDirB, OUTPUT);
+
+  pinMode(StepPin,OUTPUT);
+  digitalWrite(StepPin, HIGH);
+  pinMode(EnableMotorAB, OUTPUT);
+  digitalWrite(EnableMotorAB, HIGH);
+  
 
   
   // set the status LED to output mode
