@@ -1,14 +1,12 @@
 #include "Wire.h"
-#include "I2Cdev.h"
-#include "MPU6050.h"
 #include "math.h"
 
-#define EnableA 5 //PWM of Motor A
-#define EnableB 6 //PWM of Motor B
-#define MotorA1 4 //Direction Control of Motors A and B
-#define MotorA2 3
-#define MotorB1 8
-#define MotorB2 9
+// -------------------PINs Motor --------------
+#define MotorA D0
+#define MotorDirA D1 //HIGH = Forward ; LOW = Backward
+#define MotorB D2
+#define MotorDirB D3
+
 #define Motor_Slack 45 //Compensate for the Dead zone in the PWM range
 #define Kp 40 //proportional constant
 #define Kd -2 //Derivative constant
@@ -28,69 +26,83 @@
 #define runEvery(t) for (static long _lasttime;\
 (uint16_t)((uint16_t)millis() - _lasttime) >= (t);\
 _lasttime += (t))
-uint32_t timer;
-MPU6050 mpu;
 
-int16_t accX, accZ, gyroY; //16bit integer
+
+
+// Select SDA and SCL pins for I2C communication 
+const uint8_t scl = D6;
+const uint8_t sda = D7;
+
+// MPU6050 Slave Device Address
+const uint8_t MPU6050SlaveAddress = 0x68;
+
+
+// sensitivity scale factor respective to full scale setting provided in datasheet 
+const uint16_t AccelScaleFactor = 16384;
+const uint16_t GyroScaleFactor = 131;
+
+// MPU6050 few configuration register addresses
+const uint8_t MPU6050_REGISTER_SMPLRT_DIV   =  0x19;
+const uint8_t MPU6050_REGISTER_USER_CTRL    =  0x6A;
+const uint8_t MPU6050_REGISTER_PWR_MGMT_1   =  0x6B;
+const uint8_t MPU6050_REGISTER_PWR_MGMT_2   =  0x6C;
+const uint8_t MPU6050_REGISTER_CONFIG       =  0x1A;
+const uint8_t MPU6050_REGISTER_GYRO_CONFIG  =  0x1B;
+const uint8_t MPU6050_REGISTER_ACCEL_CONFIG =  0x1C;
+const uint8_t MPU6050_REGISTER_FIFO_EN      =  0x23;
+const uint8_t MPU6050_REGISTER_INT_ENABLE   =  0x38;
+const uint8_t MPU6050_REGISTER_ACCEL_XOUT_H =  0x3B;
+const uint8_t MPU6050_REGISTER_GYRO_XOUT_H  =  0x43;
+const uint8_t MPU6050_REGISTER_SIGNAL_PATH_RESET  = 0x68;
+
+
+int16_t AccelX, AccelY, AccelZ, Temperature, GyroX, GyroY, GyroZ;
 volatile int motorPower, gyroRate, pidout, kp, ki, kd;
-volatile float accAngle, gyroAngle, currentAngle, prevAngle=0, error, prevError=0, errorSum=0;
-volatile byte count=0;
+volatile float accAngle, gyroAngle, currentAngle = 0, error, prevError=0, errorSum=0;
 float targetAngle, MotorSlack;
 
-
+int16_t gyroCalli = 0;
 
 //Set left and right motors with the motor power obtained from PID.
-void motorspeed(int MotorAspeed, int MotorBspeed) {
+void motorspeed(int MotorSpeed) {
 // Motor A control
-  if (MotorAspeed >= 0) {
-    digitalWrite(MotorA1, HIGH);
-    digitalWrite(MotorA2, LOW);
+  if (MotorSpeed >= 0) {
+    digitalWrite(MotorDirA, HIGH);
+    digitalWrite(MotorDirB, LOW);
   }
   else{
-    digitalWrite(MotorA2, HIGH);
-    digitalWrite(MotorA1, LOW);
+    digitalWrite(MotorDirB, HIGH);
+    digitalWrite(MotorDirA, LOW);
   }
-  analogWrite(EnableA, abs(MotorAspeed));
   
-  // Motor B control
-  if (MotorBspeed >= 0) {
-    digitalWrite(MotorB2, HIGH);
-    digitalWrite(MotorB1, LOW);
+  for(int x = 0; x < abs(MotorSpeed); x++) {
+    digitalWrite(MotorA,HIGH); 
+    digitalWrite(MotorB,HIGH); 
+    delayMicroseconds(100); 
+    digitalWrite(MotorA,LOW); 
+    digitalWrite(MotorB,LOW);
+    delayMicroseconds(100); 
   }
-  else {
-    digitalWrite(MotorB1, HIGH);
-    digitalWrite(MotorB2, LOW);
-  }
-  analogWrite(EnableB, abs(MotorBspeed));
+  
+  
+
 }
 
 void angle() {
-
-  accX = mpu.getAccelerationX();
-  accZ = mpu.getAccelerationZ();
-  gyroY = mpu.getRotationY();
-  accAngle = atan2(accX, accZ)*RAD_TO_DEG;
-  gyroRate = map(gyroY, -32768, 32767, -250, 250);
-  gyroAngle = (float)gyroRate*sampleTime;
-  currentAngle = 0.9934*(prevAngle + gyroAngle) + 0.0066*(accAngle); //Complimentary Filter
-  prevAngle = currentAngle;
-
+  Read_RawValue(MPU6050SlaveAddress, MPU6050_REGISTER_ACCEL_XOUT_H);
+  double Ay = (double)AccelY/AccelScaleFactor;
+  double Az = (double)AccelZ/AccelScaleFactor;
+  accAngle = calcAccAngle(Ay, Az);
+  gyroRate = (GyroX - gyroCalli) / GyroScaleFactor;
+  gyroAngle = (float)gyroRate*0.005;
+  currentAngle = 0.9934*(currentAngle + gyroAngle) + 0.0066*(accAngle);
 }
 
-void init_PID() {
-  // initialize Timer1
-  cli(); // disable global interrupts
-  TCCR1A = 0; // set entire TCCR1A register to 0
-  TCCR1B = 0; // same for TCCR1B
-  // set compare match register to set sample time 5ms
-  OCR1A = 9999;
-  // turn on CTC mode
-  TCCR1B |= (1 << WGM12);
-  // Set CS11 bit for prescaling by 8
-  TCCR1B |= (1 << CS11);
-  // enable timer compare interrupt
-  TIMSK1 |= (1 << OCIE1A);
-  sei(); // enable global interrupts
+//configure Timerinterrupt for PID Calculation
+void Timer_Init(){
+  timer1_attachInterrupt(onTimerISR);
+  timer1_enable(TIM_DIV16, TIM_EDGE, TIM_LOOP);
+  timer1_write(25000); //5ms
 }
 
 void PID() {
@@ -98,9 +110,10 @@ void PID() {
   errorSum = errorSum + error;
   errorSum = constrain(errorSum, -300, 300); // Prevent Integral windup
   //calculate output from P, I and D values
-  // pidout = Kp*(error) + Ki*(errorSum)*sampleTime + Kd *gyroRate;
+  //pidout = Kp*(error) + Ki*(errorSum)*sampleTime + Kd *gyroRate;
   pidout = kp*(error) + ki*(errorSum)*sampleTime + kd *gyroRate;
-  
+
+  // --------------------------------------------------------------------------------------- ACHTUNG ------------------------------------------------
   pidout = constrain(pidout, PID_min, PID_max); //constrain the PWM output
   motorPower = map(pidout, PID_min, PID_max, Motor_min, Motor_max);
   
@@ -112,7 +125,7 @@ void PID() {
   
   if (motorPower > 0) motorPower = motorPower + MotorSlack;
   if (motorPower < 0) motorPower = motorPower - MotorSlack;
-
+  // --------------------------------------------------------------------------------------- ACHTUNG ------------------------------------------------
 }
 
 
@@ -200,39 +213,39 @@ void ReceiveData (){
 
 void setup() {
   Serial.begin(9600);
-  
+
+
   // set the motor control and PWM pins to output mode
-  pinMode(EnableA, OUTPUT);
-  pinMode(EnableB, OUTPUT);
-  pinMode(MotorA1, OUTPUT);
-  pinMode(MotorA2, OUTPUT);
-  pinMode(MotorB1, OUTPUT);
-  pinMode(MotorB2, OUTPUT);
-  
-  digitalWrite(EnableA, HIGH);
-  digitalWrite(EnableB, HIGH);
-  digitalWrite(MotorA1, HIGH);
-  digitalWrite(MotorA2, HIGH);
-  digitalWrite(MotorB1, HIGH);
-  digitalWrite(MotorB2, HIGH);
-  
+  pinMode(MotorA, OUTPUT);
+  pinMode(MotorDirA, OUTPUT);
+  pinMode(MotorB, OUTPUT);
+  pinMode(MotorDirB, OUTPUT);
+
   
   // set the status LED to output mode
   pinMode(13, OUTPUT);
+
+  Wire.begin(sda, scl);
+
+  //Calibrate the GyroSensor, calc the failure
+  callibrateGyroValues();
+  
   // initialize the MPU6050 and set offset values
-  mpu.initialize();
-  mpu.setXAccelOffset(-3638);
-  mpu.setYAccelOffset(-667);
-  mpu.setZAccelOffset(591);
-  mpu.setXGyroOffset(217);
-  mpu.setYGyroOffset(18);
-  mpu.setZGyroOffset(-2);
-  init_PID(); // initialize PID sampling loop
+  MPU6050_Init();
+
+  //set PID Values
   kp=Kp;
   ki=Ki;
   kd=Kd;
+
+  
   targetAngle = target_Angle ;
   MotorSlack = Motor_Slack;
+  
+  Timer_Init(); // initialize PID sampling loop
+
+  
+ 
 }
 
 
@@ -242,15 +255,79 @@ void loop() {
     angle();
   }
   ReceiveData();
-  motorspeed(motorPower, motorPower);
+  motorspeed(motorPower);
 
 }
 
-ISR (TIMER1_COMPA_vect) {
+void onTimerISR(){
   PID();
-  count++;
-  if(count == 200) {
-    count = 0;
-    digitalWrite(13, !digitalRead(13));
-  }
 }
+
+
+
+//-----------------------HelperFunctions --------------------------------
+
+void I2C_Write(uint8_t deviceAddress, uint8_t regAddress, uint8_t data){
+  Wire.beginTransmission(deviceAddress);
+  Wire.write(regAddress);
+  Wire.write(data);
+  Wire.endTransmission();
+}
+
+
+// read all 14 register
+void Read_RawValue(uint8_t deviceAddress, uint8_t regAddress){
+  Wire.beginTransmission(deviceAddress);
+  Wire.write(regAddress);
+  Wire.endTransmission();
+  Wire.requestFrom(deviceAddress, (uint8_t)14);
+  AccelX = (((int16_t)Wire.read()<<8) | Wire.read());
+  AccelY = (((int16_t)Wire.read()<<8) | Wire.read());
+  AccelZ = (((int16_t)Wire.read()<<8) | Wire.read());
+  Temperature = (((int16_t)Wire.read()<<8) | Wire.read());
+  GyroX = (((int16_t)Wire.read()<<8) | Wire.read());
+  GyroY = (((int16_t)Wire.read()<<8) | Wire.read());
+  GyroZ = (((int16_t)Wire.read()<<8) | Wire.read());
+}
+
+void Read_OneRawValue(uint8_t deviceAddress, uint8_t regAddress){
+  Wire.beginTransmission(deviceAddress);
+  Wire.write(regAddress);
+  Wire.endTransmission();
+  Wire.requestFrom(deviceAddress, (uint8_t)2);
+  GyroX = (((int16_t)Wire.read()<<8) | Wire.read());
+}
+
+
+void callibrateGyroValues(){
+  Serial.print("calli");
+  delay(150);
+  for (int i=0; i<100; i++) {
+    Read_OneRawValue(MPU6050SlaveAddress, MPU6050_REGISTER_GYRO_XOUT_H);
+    gyroCalli = gyroCalli + GyroX;
+  }
+  //Serial.print(gyroCalli);
+  gyroCalli = gyroCalli/100;
+  //Serial.printf("Cali: %d \n",gyroCalli);
+}
+
+float calcAccAngle(double accY, double accZ) {
+  return atan2(accY, accZ)*RAD_TO_DEG;
+}
+
+//configure MPU6050
+void MPU6050_Init(){
+  delay(150);
+  I2C_Write(MPU6050SlaveAddress, MPU6050_REGISTER_SMPLRT_DIV, 0x07);
+  I2C_Write(MPU6050SlaveAddress, MPU6050_REGISTER_PWR_MGMT_1, 0x01);
+  I2C_Write(MPU6050SlaveAddress, MPU6050_REGISTER_PWR_MGMT_2, 0x00);
+  I2C_Write(MPU6050SlaveAddress, MPU6050_REGISTER_CONFIG, 0x00);
+  I2C_Write(MPU6050SlaveAddress, MPU6050_REGISTER_GYRO_CONFIG, 0x00);//set +/-250 degree/second full scale
+  I2C_Write(MPU6050SlaveAddress, MPU6050_REGISTER_ACCEL_CONFIG, 0x00);// set +/- 2g full scale
+  I2C_Write(MPU6050SlaveAddress, MPU6050_REGISTER_FIFO_EN, 0x00);
+  I2C_Write(MPU6050SlaveAddress, MPU6050_REGISTER_INT_ENABLE, 0x01);
+  I2C_Write(MPU6050SlaveAddress, MPU6050_REGISTER_SIGNAL_PATH_RESET, 0x00);
+  I2C_Write(MPU6050SlaveAddress, MPU6050_REGISTER_USER_CTRL, 0x00);
+}
+
+
