@@ -82,14 +82,12 @@ void motorspeed(int MotorSpeed) {
   for(int x = 0; x < abs(MotorSpeed); x++) {
     digitalWrite(MotorA,HIGH); 
     digitalWrite(MotorB,HIGH); 
-    delayMicroseconds(100); 
+    delayMicroseconds(1000); 
     digitalWrite(MotorA,LOW); 
     digitalWrite(MotorB,LOW);
-    delayMicroseconds(100); 
+    delayMicroseconds(1000); 
   }
-  
-  
-
+ 
 }
 
 void angle() {
