@@ -1,5 +1,5 @@
-#include "Wire.h"
-#include "math.h"
+#include <Wire.h>
+#include <math.h>
 
 // -------------------PINs Motor --------------
 #define MotorA D1
@@ -62,11 +62,12 @@ const uint8_t MPU6050_REGISTER_SIGNAL_PATH_RESET  = 0x68;
 
 
 int16_t AccelX, AccelY, AccelZ, Temperature, GyroX, GyroY, GyroZ;
-volatile int motorPower, gyroRate, pidout, kp, ki, kd;
-volatile float accAngle, gyroAngle, currentAngle = 0, error, prevError=0, errorSum=0;
+volatile int motorPower, gyroRate =0, pidout, kp, ki, kd;
+volatile float accAngle = 0.0, gyroAngle=0.0, currentAngle = 0.0, error, prevError=0, errorSum=0;
 float targetAngle, MotorSlack;
 
 int16_t gyroCalli = 0;
+
 
 //Set left and right motors with the motor power obtained from PID.
 void motorspeed(int MotorSpeed) {
@@ -101,9 +102,9 @@ void angle() {
   gyroAngle = (float)gyroRate*0.005;
   currentAngle = 0.9934*(currentAngle + gyroAngle) + 0.0066*(accAngle);
   */
-  Read_OneRawValue(MPU6050SlaveAddress, MPU6050_REGISTER_GYRO_YOUT_H);
+  Read_OneRawValueYGyro(MPU6050SlaveAddress, MPU6050_REGISTER_GYRO_YOUT_H);
   gyroRate = (GyroY - gyroCalli) / GyroScaleFactor;
-  gyroAngle = (float)gyroRate*0.005;
+  gyroAngle = (float)gyroRate*sampleTime;
   currentAngle = currentAngle + gyroAngle;
 }
 
@@ -140,90 +141,16 @@ void PID() {
   */
   // --------------------------------------------------------------------------------------- ACHTUNG ------------------------------------------------
   motorPower = pidout;
-}
-
-
-void BalancePID() {
-  Serial.print ("kp");
-  Serial.print (kp);
-  Serial.print ("ki");
-  Serial.print (ki);
-  Serial.print ("kd");
-  Serial.println (kd);
-}
-
-void Aerror() {
-  Serial.print ("Target Angle");
-  Serial.println (targetAngle);
-}
-
-void Mslack() {
-  Serial.print ("MotorSlack");
-  Serial.print (MotorSlack);
-}
-
-
-void ReceiveData (){
-  if (Serial.available()) {
-    char cmd = Serial.read();
-    // Implement BT Commands
-    switch (cmd) {
-    case 'B' : // Return PID control values
-      BalancePID();
-      break;
-    case 'P' : // Increment P multiplier
-      kp = kp + P_inc;
-      BalancePID();
-      break;
-    case 'p' : // Decriment P multiplier
-      kp = kp - P_inc;
-      BalancePID();
-      break;
-    case 'I' : // Increment I multiplier
-      ki = ki + I_inc;
-      BalancePID();
-      break;
-    case 'i' : // Decriment I multiplier
-      ki = ki - I_inc;
-      BalancePID();
-      break;
-    case 'D' : // Increment D multiplier
-      kd = kd + D_inc;
-      BalancePID();
-      break;
-    case 'd' : // Decriment D multiplier
-      kd = kd - D_inc;
-      BalancePID();
-      break;
-    case 'A' : // Return Roll Error value
-      Aerror();
-      break;
-      case 'S' : // Return Motor Slack value
-      Mslack();
-      break;
-    case 'a' : // Increment roll error
-      targetAngle = targetAngle + Angle_inc;
-      Aerror();
-      break;
-    case 'b' : // Decrement roll error
-      targetAngle = targetAngle - Angle_inc;
-      Aerror();
-      break;
-    case 's' : // Increment motor slack
-      MotorSlack = MotorSlack + MS_inc;
-      Mslack();
-      break;
-    case 't' : // Increment motor slack
-      if (MotorSlack >= 1) MotorSlack = MotorSlack - MS_inc;
-      Mslack();
-      break;
-    
-    default :
-      Serial.println (cmd);
-    }
-    cmd = ' ' ; // clear BT receive string
+  if (motorPower < 0) {
+    motorPower = -4;
+  } else {
+    motorPower = 4;
   }
 }
+
+
+
+
 
 void setup() {
   Serial.begin(9600);
@@ -247,11 +174,13 @@ void setup() {
 
   Wire.begin(sda, scl);
 
+  // initialize the MPU6050 and set offset values
+  MPU6050_Init();
+  
   //Calibrate the GyroSensor, calc the failure
   callibrateGyroValues();
   
-  // initialize the MPU6050 and set offset values
-  MPU6050_Init();
+ 
 
   //set PID Values
   kp=Kp;
@@ -265,7 +194,6 @@ void setup() {
   Timer_Init(); // initialize PID sampling loop
 
   
- 
 }
 
 
@@ -277,8 +205,9 @@ void loop() {
   */
  // ReceiveData();
  Serial.print (currentAngle);
+ Serial.print ("motor: ");
  Serial.println (motorPower); 
- //motorspeed(motorPower);
+ motorspeed(motorPower);
   
 
 }
@@ -315,7 +244,7 @@ void Read_RawValue(uint8_t deviceAddress, uint8_t regAddress){
   GyroZ = (((int16_t)Wire.read()<<8) | Wire.read());
 }
 
-void Read_OneRawValue(uint8_t deviceAddress, uint8_t regAddress){
+void Read_OneRawValueYGyro(uint8_t deviceAddress, uint8_t regAddress){
   Wire.beginTransmission(deviceAddress);
   Wire.write(regAddress);
   Wire.endTransmission();
@@ -323,18 +252,17 @@ void Read_OneRawValue(uint8_t deviceAddress, uint8_t regAddress){
   GyroY = (((int16_t)Wire.read()<<8) | Wire.read());
 }
 
-
 void callibrateGyroValues(){
   Serial.print("calli");
   delay(150);
   for (int i=0; i<100; i++) {
-    Read_OneRawValue(MPU6050SlaveAddress, MPU6050_REGISTER_GYRO_YOUT_H);
+    Read_OneRawValueYGyro(MPU6050SlaveAddress, MPU6050_REGISTER_GYRO_YOUT_H);
     gyroCalli = gyroCalli + GyroY;
   }
   //Serial.print(gyroCalli);
   gyroCalli = gyroCalli/100;
   //Serial.printf("Cali: %d \n",gyroCalli);
-  delay(200);
+  //delay(5);
 }
 
 float calcAccAngle(double accX, double accZ) {
